@@ -1,9 +1,11 @@
-; limiter affichage logo sur 200 lignes
+; bug scrolling en bas a gauche
+
 
 ; coder le scrolling
 ;  font = 320*256
 ;  1 caractere = 32*32
 ; 	Y scrolling = 164
+; vitesse = 4 pixels par vbl
 
 
 ; OK - deplacement du logo : en X de 0 à 1920 par pas de 16
@@ -48,13 +50,22 @@
 	include	"jaguar.inc"
 
 rasters						.equ		1
+
+; constantes scrolling
+scrolling__hauteur_de_lettre		.equ		32
+scrolling__largeur_de_lettre		.equ		32
+scrolling__position_Y_a_l_ecran		.equ		164
+scrolling__vitesse					.equ		4
+
+
+; constantes rasters
 increment_en_X_logo			.equ		13			; normal=13 
 increment_en_Y_logo			.equ		2			; normal=2
 
 premiere_ligne_a_l_ecran	.equ		49
 
 
-nb_actuel_de_couleurs		.equ		19+40+109
+nb_actuel_de_couleurs		.equ		19+40+50
 logo_X_maximal				.equ		1920
 logo_Y_maximal				.equ		240
 logo_replicants__nb_lignes_vide_au_dessus	.equ		102
@@ -877,15 +888,7 @@ GPU_calculs_affichage_logo_en_Y__sortie:
 		sub		R1,R14
 		
 GPU_pas_plus_de_N_lignes:	
-		;cmpq	#0,R12
-		;jr		ne,EDZ1
-		;nop
-		;nop
-;EDZ1:
 
-; edz,edz
-		;movei	#3,R12				; R12=Y				0 1 2 idem
-; edz,edz
 
 
 
@@ -1219,6 +1222,66 @@ GPU_pas_plus_de_N_lignes:
 		addq	#4,R18
 
 
+
+;-----------------
+; inserer sprites scrolling
+		movei	#GPU_scrolling__offset_actuel_sur_le_buffer,R2
+		movei	#zone_scroller,R13
+;edz		
+		;movei	#font_replicants,R13
+		
+		
+		load	(r2),R0
+		
+		movei	#(1<<15)+(%0010),R4								; TRANS = 1 ( <<15 ) + 6 bits de iwidth
+		movei	#(3<<12)+(1<<15)+((640/8)<<18)+(%0111<<28),R2		; 4 bits de iwidth << 28		; depth=3 256 couleurs  / Pitch=1 / DWIDTH=1 / IWIDTH=0  : 4<<12 + 0<<15 + 0<<18 + 1<<28 : $4000 + $10000000
+; edz
+		;movei	#(3<<12)+(1<<15)+((320/8)<<18)+(%0111<<28),R2		; 4 bits de iwidth << 28		; depth=3 256 couleurs  / Pitch=1 / DWIDTH=1 / IWIDTH=0  : 4<<12 + 0<<15 + 0<<18 + 1<<28 : $4000 + $10000000
+
+;edz	
+		add		R0,R13
+
+
+		movei	#scrolling__position_Y_a_l_ecran,R12				; R12=Y
+; edz
+		;movei	#0,R12
+		movei	#largeur_bande_gauche-14,R11				; R11=X
+		
+		add		R9,R12				; Y + ligne du haut/1ere ligne
+		sharq	#3,R13				; DATA sur phrase
+		movei	#32,R14				; R14=height
+; edz
+		;movei	#256,R14
+		shlq	#3+1,R12			; Ypos * 2 << 3
+		move	R18,R17				; R17=LINK
+		shlq	#14,R14				; height << 14
+		addq	#16,R17				; R17=LINK
+		or		R14,R12				; R12 = Height  |   YPos   |000|
+		sharq	#3,R17				; LINK sur phrase
+		move	R17,R16				; R16=LINK pour 2eme mot
+		shlq	#11,R13				; decalage DATA
+		sharq	#8,R17				; R17=LINK pour 1er mot
+
+		or		R17,R13				; 1er mot : LINK + data
+		store	R13,(R18)				; store 1er mot
+		shlq	#24,R16				; R16=LINK pour 2eme mot
+		addq	#4,R18
+		or		R16,R12				; Link-address    |   Height  |   YPos   |000|
+		store	R12,(R18)				; store 2eme mot
+		
+		move	R2,R1		
+		addq	#4,R18
+		move	R4,R3			; TRANS=1
+		or		R11,R1				; + X
+		store	R3,(R18)
+		addq	#4,R18
+		store	R1,(R18)
+		addq	#4,R18
+
+
+
+
+; -----
 ; inserer un stop
 
 		moveq	#0,R25			; STOP : 0
@@ -1242,43 +1305,105 @@ GPU_pas_plus_de_N_lignes:
 		;storew	R25,(R26)
 
 
+; coder le scrolling
+;  font = 320*256
+;  1 caractere = 32*32
+; 	Y scrolling = 164
+; vitesse = 4 pixels par vbl
 
-
-
-
-
+		movei	#GPU_scrolling__pointeur_sur_lettre_en_cours,R13
+		movei	#GPU_scrolling__position_dans_la_lettre_en_cours,R10
+		load	(R13),R16
+		load	(R10),R0
+		movei	#GPU__gestion_scrolling__pas_de_nouvelle_lettre,R27
+		cmpq	#0,R0
+		jump	ne,(R27)
+		nop
 		
+		movei	#GPU_scrolling__position_dans_le_texte_du_scrolling,R11
+		movei	#fin_texte_scrolling,R12
+		load	(R11),R1
+		addq	#1,R1
+		cmp		R12,R1
+		jr		ne,GPU__gestion_scrolling__pas_fin_de_texte
+		nop
+		movei	#texte_scrolling,R1
+GPU__gestion_scrolling__pas_fin_de_texte:
+		loadb	(R1),R2			; R2 = nouvelle lettre
+		store	R1,(R11)
+		subq	#32,R2
+		moveq	#10,R4
+		move	R2,R3
+		movei	#(scrolling__hauteur_de_lettre*320),R6				; taille d'une ligne dans la fonte
+		div		R4,R2			; emplacement de lettre / 10
+		movei	#font_replicants,R16
+		move	R2,R5
+		mult	R4,R5			; x 10
+		sub		R5,R3			; reste sur 10
+		; R2 = ligne, R3 = colonne
+		mult	R6,R2
+		shlq	#5,R3			; x32
+		add		R2,R16
+		add		R3,R16			; R16 pointe sur la lettre
+		store	R16,(R13)		; stocke le pointeur sur la lettre
+
+GPU__gestion_scrolling__pas_de_nouvelle_lettre:
+; il faut remplir 4 pixels x 32 dans le buffer
+; en utilisant GPU_scrolling__offset_actuel_sur_le_buffer
+; zone_scroller
+; 
+		movei	#GPU_scrolling__offset_actuel_sur_le_buffer,R21
+		add		R0,R16			; pointe sur la colonne de lettre a copier
 		
-		.if			1=0
-		move	R10,R11
-		sub		R12,R11			; pos Y - 103
-		cmpq	#0,R11
-		jr		pl,GPU_pas_de_zone_de_vide_en_Y_a_afficher
+		movei	#zone_scroller,R20
+		movei	#320*2,R4				; = 1 ligne de buffer
+		load	(R21),R22				; R22 = offset dans le buffer
+		movei	#320,R3					; = 1 ligne de fonte
+		move	R22,R23					; R23 = offset 2eme partie du buffer
+		move	R22,R24					; sauvegarde l'offset
+		add		R3,R23					; => 2eme partie du buffer
+		add		R20,R24					; + #zone_scroller
+		movei	#scrolling__hauteur_de_lettre,R7			; compteur de lignes a copier
+		add		R20,R23					; + #zone_scroller
+
+GPU__gestion_scrolling__boucle_copie_pixels:
+; multiple de 4
+; blitter blitter...		
+		load	(R16),R2				; 4 pixels
+		store	R2,(R24)				; 1ere partie du buffer
+		add		R3,R16
+		store	R2,(R23)				; 2eme partie du buffer ( +320)
+		add		R4,R24		
+		add		R4,R23
+		;add		#(320*2)-4,R24 / R23
+		;add		#320-4,R16
+
+		subq	#1,R7
+		jr		ne,GPU__gestion_scrolling__boucle_copie_pixels
+		nop
+; avancer offset actuel
+; avancer position dans la lettre
+
+		movei	#32,R2
+		addq	#4,R0		; GPU_scrolling__position_dans_la_lettre_en_cours + 4 
+		or		R0,R0
+		cmp		R2,R0
+		jr		ne,GPU__gestion_scrolling__pas_fin_de_la_lettre
 		nop
 		moveq	#0,R0
-		neg		R11
-		store	R0,(R20)
-		;movei	#198,R13
-		store	R11,(R22)
-		;sub		R11,R13
-		;store	R13,(R21)
-		jr		GPU_calculs_affichage_logo_en_Y__sortie
-		nop
-
-GPU_pas_de_zone_de_vide_en_Y_a_afficher:
-		moveq	#0,R0
-		store	R11,(R20)
-		store	R0,(R22)
-GPU_calculs_affichage_logo_en_Y__sortie:
-
-		.endif
+GPU__gestion_scrolling__pas_fin_de_la_lettre:
+		store	R0,(R10)
 		
+		addq	#4,R22
+		cmp		R3,R22				; R3=320
+		jr		ne,GPU__gestion_scrolling__pas_fin_du_buffer
+		nop
+		moveq	#0,R22
+GPU__gestion_scrolling__pas_fin_du_buffer:
+		store	R22,(R21)			; => GPU_scrolling__offset_actuel_sur_le_buffer
 
 
-
-
-
-
+;-------------------------------------
 ; synchro avec l'interrupt object list
 		movefa	R26,R26
 		
@@ -1361,7 +1486,11 @@ GPU_volume_A:			dc.l		13			; de 0 a 15
 GPU_volume_B:			dc.l		15			; de 0 a 15
 GPU_volume_C:			dc.l		11			; de 0 a 15
 
-		
+; scrolling
+GPU_scrolling__position_dans_la_lettre_en_cours:		dc.l		0
+GPU_scrolling__position_dans_le_texte_du_scrolling:		dc.l		texte_scrolling
+GPU_scrolling__pointeur_sur_lettre_en_cours:			dc.l		0
+GPU_scrolling__offset_actuel_sur_le_buffer:				dc.l		0
 ;---------------------
 ; FIN DE LA RAM GPU
 GPU_fin:
@@ -1470,16 +1599,16 @@ raster__rouleau_orange:
 	.phrase
 CLUT_RGB:
 ;1
-	dc.w		(%00111<<11)+(%00000<<1)+(00<<6)			;0100
-	dc.w		(%01011<<11)+(%00000<<1)+(00<<6)			;0200
-	dc.w		(%01111<<11)+(%00000<<1)+(00<<6)			;0300
-	dc.w		(%10011<<11)+(%00000<<1)+(00<<6)			;0400
-	dc.w		(%10111<<11)+(%00000<<1)+(00<<6)			;0500
-	dc.w		(%11011<<11)+(%00111<<1)+(00<<6)			;0610
-	dc.w		(%11111<<11)+(%00111<<1)+(00<<6)			;0710
-	dc.w		(%11111<<11)+(%01011<<1)+(00<<6)			;0720
-	dc.w		(%11111<<11)+(%01011<<1)+(%00111<<6)		;0721
-	dc.w		(%11111<<11)+(%01111<<1)+(%00111<<6)		;0731
+	dc.w		(%00111<<11)+(%00000<<1)+(00<<6)			;0100		1
+	dc.w		(%01011<<11)+(%00000<<1)+(00<<6)			;0200		2
+	dc.w		(%01111<<11)+(%00000<<1)+(00<<6)			;0300		3
+	dc.w		(%10011<<11)+(%00000<<1)+(00<<6)			;0400		4
+	dc.w		(%10111<<11)+(%00000<<1)+(00<<6)			;0500		5
+	dc.w		(%11011<<11)+(%00111<<1)+(00<<6)			;0610		6
+	dc.w		(%11111<<11)+(%00111<<1)+(00<<6)			;0710		7
+	dc.w		(%11111<<11)+(%01011<<1)+(00<<6)			;0720		8
+	dc.w		(%11111<<11)+(%01011<<1)+(%00111<<6)		;0721		9
+	dc.w		(%11111<<11)+(%01111<<1)+(%00111<<6)		;0731		10
 	dc.w		(%11111<<11)+(%01111<<1)+(%01011<<6)		;0732
 	dc.w		(%11111<<11)+(%10011<<1)+(%01011<<6)		;0742
 	dc.w		(%11111<<11)+(%10011<<1)+(%01111<<6)		;0743
@@ -1488,12 +1617,12 @@ CLUT_RGB:
 	dc.w		(%11111<<11)+(%11011<<1)+(%10011<<6)		;0764
 	dc.w		(%11111<<11)+(%11011<<1)+(%10111<<6)		;0765
 	dc.w		(%11111<<11)+(%11011<<1)+(%11011<<6)		;0766
-	dc.w		(%11111<<11)+(%11111<<1)+(%11111<<6)		;0777
+	dc.w		(%11111<<11)+(%11111<<1)+(%11111<<6)		;0777		19
 ;20	
 ;nb couleurs : 40
 table_couleur_logo:
-        dc.w    $0000
-        dc.w    $1084
+;        dc.w    $0000
+        dc.w    $1084				; 20
         dc.w    $1986
         dc.w    $0041
         dc.w    $3ACF
@@ -1523,7 +1652,7 @@ table_couleur_logo:
         dc.w    $C701
         dc.w    $C716
         dc.w    $C718
-        dc.w    $C717
+        dc.w    $C717			; 50
         dc.w    $C71F
         dc.w    $C720
         dc.w    $C727
@@ -1531,11 +1660,11 @@ table_couleur_logo:
         dc.w    $BF27
         dc.w    $DF2F
         dc.w    $E730
-        dc.w    $E731
+        dc.w    $E731			; 58
 ; 60	
-; +109 couleurs font
-        dc.w    $0000
-        dc.w    $0500
+; +50 couleurs font
+        dc.w    $0000			;
+        dc.w    $0500			; 60
         dc.w    $04C0
         dc.w    $05C0
         dc.w    $0600
@@ -1549,11 +1678,8 @@ table_couleur_logo:
         dc.w    $C420
         dc.w    $DB27
         dc.w    $DB28
-        dc.w    $E2AC
         dc.w    $E230
-        dc.w    $E1F0
         dc.w    $E338
-        dc.w    $E3B8
         dc.w    $E438
         dc.w    $E538
         dc.w    $E638
@@ -1563,88 +1689,30 @@ table_couleur_logo:
         dc.w    $8738
         dc.w    $5EB8
         dc.w    $5E78
-        dc.w    $44F8
         dc.w    $11B8
-        dc.w    $0078
-        dc.w    $0580
-        dc.w    $0640
-        dc.w    $0680
         dc.w    $1F00
-        dc.w    $1700
-        dc.w    $3700
-        dc.w    $0F00
-        dc.w    $5705
         dc.w    $3F00
-        dc.w    $768C
         dc.w    $5EC7
-        dc.w    $9594
         dc.w    $7E0F
-        dc.w    $B49C
         dc.w    $A4D8
         dc.w    $9D17
-        dc.w    $D3A4
         dc.w    $C3E0
         dc.w    $C41F
         dc.w    $DAE8
-        dc.w    $E1B4
+        dc.w    $E1F0
         dc.w    $E137
-        dc.w    $E1B8
         dc.w    $E238
-        dc.w    $E2B8
         dc.w    $E1F8
         dc.w    $E2F8
-        dc.w    $E4B8
-        dc.w    $E4F8
-        dc.w    $E5B8
-        dc.w    $E6B8
-        dc.w    $B738
-        dc.w    $9738
-        dc.w    $76F8
-        dc.w    $56C5
-        dc.w    $768D
-        dc.w    $E1F5
         dc.w    $E3F8
-        dc.w    $D738
-        dc.w    $44F7
+        dc.w    $E4F8
         dc.w    $11F7
-        dc.w    $0D0C
-        dc.w    $34EE
-        dc.w    $45E9
-        dc.w    $04C8
         dc.w    $04CC
         dc.w    $0501
-        dc.w    $0422
-        dc.w    $03A9
-        dc.w    $0137
-        dc.w    $8611
-        dc.w    $D365
-        dc.w    $DEB8
+        dc.w    $01C0
+        dc.w    $0240
         dc.w    $9F38
-        dc.w    $2F00
         dc.w    $66C7
-        dc.w    $8D93
-        dc.w    $E177
-        dc.w    $E1B7
-        dc.w    $4703
-        dc.w    $4F04
-        dc.w    $5704
-        dc.w    $A519
-        dc.w    $BC1F
-        dc.w    $AC9B
-        dc.w    $C421
-        dc.w    $DAAC
-        dc.w    $D329
-        dc.w    $D328
-        dc.w    $E22F
-        dc.w    $E175
-        dc.w    $4F05
-        dc.w    $66C9
-        dc.w    $668B
-        dc.w    $8612
-        dc.w    $9555
-        dc.w    $B45D
-
-
 
 
 
@@ -1784,7 +1852,7 @@ equalizeur_vert:
 		.endr
 
 texte_scrolling:
-		dc.b		"abcdefghij      THE FUCKING BEST REPLICANTS ST AMIGOS PRESENTS:- EMLYN HUGUES FOOTBALL - BROKEN BY THE REPLICANTS     ONLY A FEW FUCKINGS TO NOCKTANAL THE CANADIANS DICKHEAD, OVERWANKERS DAY AFTER DAY YEAR AFTER YEAR YOU ARE LAMEST AND LAMEST JUST SOME GREETINGS TO OUR BEST FRIENDS: MCA, AUTOMATION, "
+		dc.b		" abcdefghij      THE FUCKING BEST REPLICANTS ST AMIGOS PRESENTS:- EMLYN HUGUES FOOTBALL - BROKEN BY THE REPLICANTS     ONLY A FEW FUCKINGS TO NOCKTANAL THE CANADIANS DICKHEAD, OVERWANKERS DAY AFTER DAY YEAR AFTER YEAR YOU ARE LAMEST AND LAMEST JUST SOME GREETINGS TO OUR BEST FRIENDS: MCA, AUTOMATION, "
 		dc.b		"HOTLINE, TCB, TEX, DEREK MD...  CREDITS FOR THIS SCREEN                    CODING -VICKERS-                    AMIGAFONT RIPPER -VANTAGE- FROM ST CONNEXION                    BIG REPLICANTS LOGO BY -PULSAR- FROM NEXT                    MUSIX -MAD MAX- FROM -T-          END OF SCROLL       "
 fin_texte_scrolling:
 		even
@@ -1807,8 +1875,7 @@ font_replicants:
 		even
 		
 		.BSS
-		ds.b		320*50
-		.phrase
+		.dphrase
 DEBUT_BSS:
 vbl_counter:			ds.l			1
 _50ou60hertz:			ds.l	1
