@@ -1,7 +1,7 @@
 # replic22
 Atari ST Replicants for Blue Angels, recreated for Atari Jaguar
 
-original on Atari ST done by Vickers
+original on Atari ST done by Vickers / Jean-Louis Perrigot 
 
 https://demozoo.org/productions/121596/
 
