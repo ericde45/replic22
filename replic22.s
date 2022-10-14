@@ -488,10 +488,25 @@ calc_vals:
 		;move.l	#premiere_ligne_a_l_ecran,GPU_premiere_ligne
 		;move.l	#(200+premiere_ligne_a_l_ecran)*2,GPU_derniere_ligne			; 508/2=254 ; 254-13=241
 		;move.l	#60,_50ou60hertz	
+
+		move.l  #0,BORD1                ; Black border
+        move.w  #0,BG                   ; Init line buffer to black
+
 			
+		cmp.w	#60,_50ou60hertz
+		bne.s	initivdeo_pal_edz
+			
+		move.l	#26+40,GPU_premiere_ligne
+		move.l	#508-42,GPU_derniere_ligne
+		
 				
-				move.l  #0,BORD1                ; Black border
-                move.w  #0,BG                   ; Init line buffer to black
+                movem.l (sp)+,d0-d6
+                rts
+
+initivdeo_pal_edz:
+		move.l	#26+40+16,GPU_premiere_ligne
+		move.l	#508-42+16,GPU_derniere_ligne
+
                 movem.l (sp)+,d0-d6
                 rts
 
